@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isMemberOf(workspaceId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/workspaces/$(workspaceId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.memberIds;
+    }
+
+    function isOwnerOf(workspaceId) {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid;
+    }
+
+    // users — profil user, hanya bisa baca/tulis milik sendiri
+    match /users/{uid} {
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow create, update: if isAuthenticated() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    // usernames — public read untuk lookup login
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // workspaces
+    match /workspaces/{workspaceId} {
+      allow read: if isAuthenticated() &&
+        request.auth.uid in resource.data.memberIds;
+      allow create: if isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.auth.uid in request.resource.data.memberIds;
+      allow update: if isAuthenticated() &&
+        request.auth.uid == resource.data.ownerId;
+      allow delete: if isAuthenticated() &&
+        request.auth.uid == resource.data.ownerId;
+
+      // account groups / kategori — hanya member yang bisa akses
+      match /groups/{groupId} {
+        allow read: if isMemberOf(workspaceId);
+        allow create, update: if isMemberOf(workspaceId);
+        allow delete: if isOwnerOf(workspaceId);
+      }
+
+      // chart of accounts — hanya member yang bisa akses
+      match /accounts/{accountId} {
+        allow read: if isMemberOf(workspaceId);
+        allow create, update: if isMemberOf(workspaceId);
+        allow delete: if isOwnerOf(workspaceId);
+      }
+
+      match /transactions/{txId} {
+        allow read: if isMemberOf(workspaceId);
+        allow create: if isMemberOf(workspaceId) &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMemberOf(workspaceId) &&
+          resource.data.isPosted == false;
+        allow delete: if false;
+
+        match /journal_entries/{entryId} {
+          allow read: if isMemberOf(workspaceId);
+          allow create: if isMemberOf(workspaceId);
+          allow update, delete: if false;
+        }
+      }
+    }
+  }
+}

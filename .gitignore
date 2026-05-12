@@ -1,0 +1,9 @@
+# Firebase service account keys
+*firebase-adminsdk*.json
+
+# Environment
+.env
+*.env
+
+# OS
+.DS_Store
